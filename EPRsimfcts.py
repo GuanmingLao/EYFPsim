@@ -291,6 +291,38 @@ def generate_regular_sphere_points(N, r=1.0):
     return np.array(points)
 
 @njit
+def tile_1d(a, k):
+    n = len(a)
+    out = np.empty(n * k, dtype=a.dtype)
+    for i in range(k):
+        for j in range(n):
+            out[i * n + j] = a[j]
+    return out
+
+@njit
+def repeat_1d(a, k):
+    n = len(a)
+    out = np.empty(n * k, dtype=a.dtype)
+    for i in range(n):
+        for j in range(k):
+            out[i * k + j] = a[i]
+    return out
+
+@njit
+def Generate_molecule_set_equidistributed(Number_of_molecules:int, number_of_orientations:int):
+    phi_01 = np.linspace(0, np.pi, number_of_orientations) # The first Euler angle
+    point_set = generate_regular_sphere_points(Number_of_molecules)  # shape: (N_point_set, 2)
+    #phi_grid, theta_grid, chi_grid = np.meshgrid(phi_01, theta_01, chi_01, indexing='ij')
+    theta_01 = point_set[:, 0]
+    chi_01 = point_set[:, 1]
+    # Flatten to 1D arrays
+    phi_01_all = repeat_1d(phi_01, Number_of_molecules)
+    theta_01_all = tile_1d(theta_01, number_of_orientations)
+    chi_01_all = tile_1d(chi_01, number_of_orientations)
+    
+    return phi_01_all, theta_01_all, chi_01_all
+    
+@njit
 def matmul_numba(a:complex, b:complex):
     n, m = a.shape
     p = b.shape[1]
