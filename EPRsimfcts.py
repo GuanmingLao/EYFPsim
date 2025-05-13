@@ -714,3 +714,19 @@ def DEER_4_pulse_numba_samples(Rabi_freq: complex, t_pi: float, Omega1: float, d
     sig_m = np.sum(sig_m_all, axis=0) / N_mol
     #sig_c=sig_c/N_mol
     return sig_p, sig_m
+
+@njit
+def lorentzian_numba(f, f0, gamma):
+    """Numba-compatible Lorentzian line shape (centered at f0)."""
+    return (0.5 * gamma) / ((f - f0)**2 + (0.5 * gamma)**2) / np.pi
+
+@njit
+def convolve_spectrum_numba(f_lines, I_lines, f_axis, gamma):
+    """Convolve transitions with Lorentzian lineshape using Numba."""
+    spectrum = np.zeros_like(f_axis)
+    for i in range(len(f_lines)):
+        f0 = f_lines[i]
+        I0 = I_lines[i]
+        for j in range(len(f_axis)):
+            spectrum[j] += I0 * lorentzian_numba(f_axis[j], f0, gamma)
+    return spectrum
