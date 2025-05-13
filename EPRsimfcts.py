@@ -214,10 +214,11 @@ def Rabi_freq_vs_orientation(B0, B1, phi, theta, chi):
 def Eff_H(Omega: complex, delta: complex)-> complex:
     return np.array([[delta, Omega],[Omega.conjugate(), -delta]])/2
 
-sx = np.array([[0, 1], [1, 0]], dtype=complex)
-sy = np.array([[0, -1j], [1j, 0]], dtype=complex)
-sz = np.array([[1, 0], [0, -1]], dtype=complex)
-I2 = np.eye(2, dtype=complex)
+I2 = np.eye(2, dtype=np.complex128)
+
+sx = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+sy = np.array([[0, -1j], [1j, 0]], dtype=np.complex128)
+sz = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
 def expm_hamiltonian(H, t):
     """
@@ -259,6 +260,56 @@ def expm_hamiltonian(H, t):
         U = phase * I2
         
     return U
+    
+@njit
+def expm_hamiltonian_numba(H, t):
+    a0 = 0.5 * (H[0, 0] + H[1, 1]).real
+    ax = 0.5 * (H[0, 1] + H[1, 0]).real
+    ay = -0.5 * (H[0, 1] - H[1, 0]).imag
+    az = 0.5 * (H[0, 0] - H[1, 1]).real
+    a_norm = np.sqrt(ax**2 + ay**2 + az**2)
+
+    # Compute phase manually
+    phase_real = np.cos(a0 * t)
+    phase_imag = -np.sin(a0 * t)
+
+    U = np.zeros((2, 2), dtype=np.complex128)
+    
+    if a_norm > 1e-12:
+        nx, ny, nz = ax / a_norm, ay / a_norm, az / a_norm
+        cos_term = np.cos(a_norm * t)
+        sin_term = np.sin(a_norm * t)
+
+        n_dot_sigma = nx * sx + ny * sy + nz * sz
+        for i in range(2):
+            for j in range(2):
+                val = cos_term * I2[i, j] - 1j * sin_term * n_dot_sigma[i, j]
+                # Apply complex phase: phase = phase_real + i * phase_imag
+                U[i, j] = phase_real * val - 1j * phase_imag * val
+    else:
+        for i in range(2):
+            for j in range(2):
+                U[i, j] = phase_real * I2[i, j] - 1j * phase_imag * I2[i, j]
+
+    return U
+
+@njit
+def compute_rabi_signal(ne, ng, Rabi_freq, delta, T, f_peak, time_seq):
+    sig = np.zeros(len(time_seq), dtype=np.complex128)
+
+    for n_i in range(len(ne)):
+        rho0 = np.array([[ne[n_i], 0.0], [0.0, ng[n_i]]], dtype=np.complex128)
+        delta_i = delta[n_i] + (np.mean(T) - f_peak) * 1000 * 2 * np.pi
+        H_mol = Eff_H(Rabi_freq[n_i], delta_i)
+
+        for t_i in range(len(time_seq)):
+            U = expm_hamiltonian_numba(H_mol, time_seq[t_i])
+            Udag = U.conj().T
+            rho_i = matmul_numba(matmul_numba(U, rho0), Udag)
+            temp = matmul_numba(rho_i, sz)
+            sig[t_i] += temp[0, 0] + temp[1, 1]  # Trace manually
+
+    return sig/len(ne)
 
 @njit
 def Generate_molecule_set(Number_of_molecules):
@@ -714,19 +765,3 @@ def DEER_4_pulse_numba_samples(Rabi_freq: complex, t_pi: float, Omega1: float, d
     sig_m = np.sum(sig_m_all, axis=0) / N_mol
     #sig_c=sig_c/N_mol
     return sig_p, sig_m
-
-@njit
-def lorentzian_numba(f, f0, gamma):
-    """Numba-compatible Lorentzian line shape (centered at f0)."""
-    return (0.5 * gamma) / ((f - f0)**2 + (0.5 * gamma)**2) / np.pi
-
-@njit
-def convolve_spectrum_numba(f_lines, I_lines, f_axis, gamma):
-    """Convolve transitions with Lorentzian lineshape using Numba."""
-    spectrum = np.zeros_like(f_axis)
-    for i in range(len(f_lines)):
-        f0 = f_lines[i]
-        I0 = I_lines[i]
-        for j in range(len(f_axis)):
-            spectrum[j] += I0 * lorentzian_numba(f_axis[j], f0, gamma)
-    return spectrum
