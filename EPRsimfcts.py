@@ -467,10 +467,11 @@ def Generate_molecule_set_equidistributed(Number_of_molecules:int, number_of_ori
     phi_01 = np.linspace(0, np.pi, number_of_orientations) # The first Euler angle
     point_set = generate_regular_sphere_points(Number_of_molecules)  # shape: (N_point_set, 2)
     #phi_grid, theta_grid, chi_grid = np.meshgrid(phi_01, theta_01, chi_01, indexing='ij')
+    Actual_number_of_molecules = len(point_set) #Sometimes the round-off error will cause the number of points to be less than the number of molecules
     theta_01 = point_set[:, 0]
     chi_01 = point_set[:, 1]
     # Flatten to 1D arrays
-    phi_01_all = repeat_1d(phi_01, Number_of_molecules)
+    phi_01_all = repeat_1d(phi_01, Actual_number_of_molecules)
     theta_01_all = tile_1d(theta_01, number_of_orientations)
     chi_01_all = tile_1d(chi_01, number_of_orientations)
     
