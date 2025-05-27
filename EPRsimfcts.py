@@ -476,6 +476,29 @@ def Generate_molecule_set_equidistributed(Number_of_molecules:int, number_of_ori
     chi_01_all = tile_1d(chi_01, number_of_orientations)
     
     return phi_01_all, theta_01_all, chi_01_all
+ 
+@njit
+def fibonacci_sphere(n):
+    indices = np.arange(0, n)
+    phi = np.pi * (3. - np.sqrt(5))  # golden angle
+    chi01 = (phi * indices)%(2 * np.pi)  # azimuthal angle
+    z = 1 - (2 * indices) / (n - 1)
+    theta01=np.arccos(z)
+    return np.stack((theta01, chi01), axis=1) 
+
+@njit
+def Generate_molecule_set_Fibonacci_sphere(Number_of_B_orientation:int, number_of_Mol_orientations:int):
+    phi_01 = np.linspace(0, np.pi, number_of_Mol_orientations) # The first Euler angle
+    point_set = fibonacci_sphere(Number_of_B_orientation)  # shape: (N_point_set, 2)
+    Actual_number_of_B_orientation = len(point_set) #Sometimes the round-off error will cause the number of points to be less than the number of molecules
+    theta_01 = point_set[:, 0]
+    chi_01 = point_set[:, 1]
+    # Flatten to 1D arrays
+    phi_01_all = repeat_1d(phi_01, Actual_number_of_B_orientation)
+    theta_01_all = tile_1d(theta_01, number_of_Mol_orientations)
+    chi_01_all = tile_1d(chi_01, number_of_Mol_orientations)
+    
+    return phi_01_all, theta_01_all, chi_01_all
     
 @njit
 def matmul_numba(a:complex, b:complex):
@@ -869,3 +892,19 @@ def DEER_4_pulse_numba_samples(Rabi_freq: complex, t_pi: float, Omega1: float, d
     sig_m = np.sum(sig_m_all, axis=0) / N_mol
     #sig_c=sig_c/N_mol
     return sig_p, sig_m
+    
+@njit
+def lorentzian_numba(f, f0, gamma):
+    """Numba-compatible Lorentzian line shape (centered at f0)."""
+    return (0.5 * gamma) / ((f - f0)**2 + (0.5 * gamma)**2) / np.pi
+
+@njit
+def convolve_spectrum_numba(f_lines, I_lines, f_axis, gamma):
+    """Convolve transitions with Lorentzian lineshape using Numba."""
+    spectrum = np.zeros_like(f_axis)
+    for i in range(len(f_lines)):
+        f0 = f_lines[i]
+        I0 = I_lines[i]
+        for j in range(len(f_axis)):
+            spectrum[j] += I0 * lorentzian_numba(f_axis[j], f0, gamma)
+    return spectrum
