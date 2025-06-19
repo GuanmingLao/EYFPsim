@@ -261,108 +261,6 @@ def expm_hamiltonian(H, t):
         
     return U
 
-
-    
-@njit
-def expm_hamiltonian_numba(H, t):
-    a0 = 0.5 * (H[0, 0] + H[1, 1]).real
-    ax = 0.5 * (H[0, 1] + H[1, 0]).real
-    ay = -0.5 * (H[0, 1] - H[1, 0]).imag
-    az = 0.5 * (H[0, 0] - H[1, 1]).real
-    a_norm = np.sqrt(ax**2 + ay**2 + az**2)
-
-    # Compute phase manually
-    phase_real = np.cos(a0 * t)
-    phase_imag = -np.sin(a0 * t)
-
-    U = np.zeros((2, 2), dtype=np.complex128)
-    
-    if a_norm > 1e-12:
-        nx, ny, nz = ax / a_norm, ay / a_norm, az / a_norm
-        cos_term = np.cos(a_norm * t)
-        sin_term = np.sin(a_norm * t)
-
-        n_dot_sigma = nx * sx + ny * sy + nz * sz
-        for i in range(2):
-            for j in range(2):
-                val = cos_term * I2[i, j] - 1j * sin_term * n_dot_sigma[i, j]
-                # Apply complex phase: phase = phase_real + i * phase_imag
-                U[i, j] = phase_real * val - 1j * phase_imag * val
-    else:
-        for i in range(2):
-            for j in range(2):
-                U[i, j] = phase_real * I2[i, j] - 1j * phase_imag * I2[i, j]
-
-    return U
-
-@njit
-def compute_rabi_signal(ne, ng, Rabi_freq, delta, T, f_peak, time_seq):
-    sig = np.zeros(len(time_seq), dtype=np.complex128)
-
-    for n_i in range(len(ne)):
-        rho0 = np.array([[ne[n_i], 0.0], [0.0, ng[n_i]]], dtype=np.complex128)
-        delta_i = delta[n_i] + (np.mean(T) - f_peak) * 1000 * 2 * np.pi
-        H_mol = Eff_H(Rabi_freq[n_i], delta_i)
-
-        for t_i in range(len(time_seq)):
-            U = expm_hamiltonian_numba(H_mol, time_seq[t_i])
-            Udag = U.conj().T
-            rho_i = matmul_numba(matmul_numba(U, rho0), Udag)
-            temp = matmul_numba(rho_i, sz)
-            sig[t_i] += temp[0, 0] + temp[1, 1]  # Trace manually
-
-    return sig/len(ne)
-    
-    
-@njit
-def expm_hamiltonian_numba(H, t):
-    a0 = 0.5 * (H[0, 0] + H[1, 1]).real
-    ax = 0.5 * (H[0, 1] + H[1, 0]).real
-    ay = -0.5 * (H[0, 1] - H[1, 0]).imag
-    az = 0.5 * (H[0, 0] - H[1, 1]).real
-    a_norm = np.sqrt(ax**2 + ay**2 + az**2)
-
-    # Compute phase manually
-    phase_real = np.cos(a0 * t)
-    phase_imag = -np.sin(a0 * t)
-
-    U = np.zeros((2, 2), dtype=np.complex128)
-    
-    if a_norm > 1e-12:
-        nx, ny, nz = ax / a_norm, ay / a_norm, az / a_norm
-        cos_term = np.cos(a_norm * t)
-        sin_term = np.sin(a_norm * t)
-
-        n_dot_sigma = nx * sx + ny * sy + nz * sz
-        for i in range(2):
-            for j in range(2):
-                val = cos_term * I2[i, j] - 1j * sin_term * n_dot_sigma[i, j]
-                # Apply complex phase: phase = phase_real + i * phase_imag
-                U[i, j] = phase_real * val - 1j * phase_imag * val
-    else:
-        for i in range(2):
-            for j in range(2):
-                U[i, j] = phase_real * I2[i, j] - 1j * phase_imag * I2[i, j]
-
-    return U
-
-@njit
-def compute_rabi_signal(ne, ng, Rabi_freq, delta, T, f_peak, time_seq):
-    sig = np.zeros(len(time_seq), dtype=np.complex128)
-
-    for n_i in range(len(ne)):
-        rho0 = np.array([[ne[n_i], 0.0], [0.0, ng[n_i]]], dtype=np.complex128)
-        delta_i = delta[n_i] + (np.mean(T) - f_peak) * 1000 * 2 * np.pi
-        H_mol = Eff_H(Rabi_freq[n_i], delta_i)
-
-        for t_i in range(len(time_seq)):
-            U = expm_hamiltonian_numba(H_mol, time_seq[t_i])
-            Udag = U.conj().T
-            rho_i = matmul_numba(matmul_numba(U, rho0), Udag)
-            temp = matmul_numba(rho_i, sz)
-            sig[t_i] += temp[0, 0] + temp[1, 1]  # Trace manually
-
-    return sig/len(ne)
     
 @njit
 def expm_hamiltonian_numba(H, t):
@@ -630,8 +528,8 @@ def U_1t(Omega1, delta1, Dss, t): #time-evolution operator for EYFP MW transitio
     #Already checked with diagonalization method, this function is correct
     delta_p = delta1+Dss/2
     delta_m = delta1-Dss/2
-    Omega_p=np.sqrt(Omega1**2+delta_p**2)
-    Omega_m=np.sqrt(Omega1**2+delta_m**2)
+    Omega_p=np.sqrt(np.abs(Omega1)**2+delta_p**2)
+    Omega_m=np.sqrt(np.abs(Omega1)**2+delta_m**2)
     theta_p=Omega_p*t/2
     theta_m=Omega_m*t/2
     M11 = np.cos(theta_p) - 1j*delta_p/Omega_p*np.sin(theta_p)
@@ -764,6 +662,74 @@ def Transitions_and_couplings_calculation_numba(B0:float, D0:float, E0:float, d:
     
     return Txz,Tyz, deltaxz, deltayz, Rabi_freq_xz, Rabi_freq_yz, Dss_zx, Dss_zy, nx, ny, nz
 
+@njit(parallel=True)
+def DEER_NV_numba(Rabi_freq: complex, t_pi: float, Omega1: float, delta: float, Dss:complex, tau: float, N_tau:int, n_g:float, n_e:float): #n_g, n_e: population on ground/excited states
+    #Numba version of the 4-pulse DEER simulation
+    tau_array=np.linspace(0, tau, N_tau)
+    N_mol=len(Rabi_freq)
+    sig_p_all = np.zeros((N_mol, N_tau))
+    #sig_m_all = np.zeros((N_mol, N_tau))
+    #sig_c_all = np.zeros((N_mol, N_tau))
+    #print('definition-0')
+    sig_p=np.zeros_like(tau) #coupling to spin up
+    sig_m=np.zeros_like(tau) #coupling to spin down
+    sig_c=np.zeros_like(tau) #no coupling, for comparison only
+    #rho_0p = np.zeros((4, 4), dtype=np.complex128)
+    #rho_0m = np.zeros((4, 4), dtype=np.complex128)
+    Dssi=0.0+0.0j
+    Omega2=Omega1 # Rabi freq of the target spin
+    t_e_pi=np.pi/Omega2
+    t_diff=t_pi-t_e_pi
+    
+
+    O_s = np.array([[1/2,0, 0, 0], [0,-1/2, 0, 0],[0,0, 1/2, 0],[0,0, 0, -1/2]]) #Observation operator for EYFP spin
+    #print('definition-1')
+    for i in prange(N_mol):
+        rho_0p = np.zeros((4, 4), dtype=np.complex128)
+        rho_0m = np.zeros((4, 4), dtype=np.complex128)
+        rho_0p[0, 0] = n_g[i]
+        rho_0p[1, 1] = n_e[i]
+        rho_0p[2, 2] = 0.0
+        rho_0p[3, 3] = 0.0
+
+        rho_0m[0, 0] = 0.0
+        rho_0m[1, 1] = 0.0
+        rho_0m[2, 2] = n_g[i]
+        rho_0m[3, 3] = n_e[i]
+        delta_1 = delta[i]
+        Dssi = Dss[i]
+        for j in range(N_tau):
+        
+            U1=U_1(Rabi_freq[i], delta_1, Dssi, t_pi/2) #pi/2 pulse on EYFP
+            U_fe_1= U_0t(delta_1, Dssi, tau_array[j]) #'fe' means free evolution
+            U2=U_1(Rabi_freq[i], delta_1, Dssi, t_diff/2)
+            U3=U_3(Rabi_freq[i], Omega2, delta_1, Dssi, t_e_pi) # pi pulse on EYFP
+            
+            U_NV_deer=matmul_numba(U1, matmul_numba(U_fe_1, matmul_numba(U2, matmul_numba(U3, matmul_numba(U2,matmul_numba(U_fe_1,U1)))))) #NV DEER sequence#print('Definition of Us in the (', i, ', ', j, ')th for-loops')        
+            #U10=U_1t(Rabi_freq[i], delta_1, 0, t_pi/2)
+            #U_fe_10= U_0t(delta_1, 0, tau1)
+            #U20=matmul_numba(U10,U10) # pi pulse on EYFP
+            #U_fe_20= U_0t(delta_1, 0, tau[j])
+            #U30=U_2_pi_pulse(Omega1, delta_1, 0) #the third pi pulse, applied to the target spin
+            #U_fe_30= U_0t(delta_1, 0, tau_total-tau[j])
+            #U_fe_40= U_0t(delta_1, 0, tau2)
+            #U_SE = matmul_numba(U10, matmul_numba(U_fe_40, matmul_numba(U20, matmul_numba(U_fe_30, matmul_numba(U30, matmul_numba(U_fe_20, matmul_numba(U20, matmul_numba(U_fe_10,U10))))))))
+            #print(U_SE)
+            
+            #rho_tp =matmul_numba(U_DEER_4, matmul_numba(rho_0p, np.conj(U_DEER_4).T))
+            #rho_tm =matmul_numba(U_DEER_4, matmul_numba(rho_0m, np.conj(U_DEER_4).T))
+            #rho_t0 =matmul_numba(U_SE, matmul_numba(rho_0p, np.conj(U_SE).T))
+            #sig_p[j]+=np.trace(matmul_numba(rho_tp, O_s)).real
+            #sig_m[j]+=np.trace(matmul_numba(rho_tm, O_s)).real
+            rho_tp = matmul_numba(U_NV_deer, matmul_numba(rho_0p, np.conj(U_NV_deer).T))
+            #rho_tm = matmul_numba(U_NV_deer, matmul_numba(rho_0m, np.conj(U_NV_deer).T))
+            sig_p_all[i, j] = np.trace(matmul_numba(rho_tp, O_s)).real
+            #sig_m_all[i, j] = np.trace(matmul_numba(rho_tm, O_s)).real
+            #sig_c[j]+=np.trace(matmul_numba(rho_t0, O_s)).real
+    sig_p = np.sum(sig_p_all, axis=0) / N_mol
+    #sig_m = np.sum(sig_m_all, axis=0) / N_mol
+    #sig_c=sig_c/N_mol
+    return tau, sig_p#, sig_m
 
 @njit(parallel=True)
 def DEER_4_pulse_numba(Rabi_freq: complex, t_pi: float, Omega1: float, delta: float, Dss:complex, tau1: float, tau2: float, N_tau:int, n_g:float, n_e:float): #n_g, n_e: population on ground/excited states
@@ -807,7 +773,8 @@ def DEER_4_pulse_numba(Rabi_freq: complex, t_pi: float, Omega1: float, delta: fl
             #Dssi = Dss[i] #Unit: MHz
             #print('Definition of rhos in the (', i, ', ', j, ')th for-loops')
             #Pulse sequence
-            U1=U_1t(np.abs(Rabi_freq[i]), delta_1, Dssi, t_pi/2) #pi/2 pulse on EYFP
+            #U1=U_1t(np.abs(Rabi_freq[i]), delta_1, Dssi, t_pi/2) #pi/2 pulse on EYFP
+            U1=U_1(Rabi_freq[i], delta_1, Dssi, t_pi/2)
             U_fe_1= U_0t(delta_1, Dssi, tau1) #'fe' means free evolution
             U2=matmul_numba(U1,U1) # pi pulse on EYFP
             U_fe_2= U_0t(delta_1, Dssi, tau[j])
